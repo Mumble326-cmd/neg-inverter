@@ -117,6 +117,7 @@ function flashStatus(msg) {
   flashTimer = setTimeout(showFilmName, 1500);
 }
 function updateDot() {
+  if (!statusDot) return;
   statusDot.className = baseSet ? 'dot-live' : 'dot-nobase';
 }
 
@@ -335,11 +336,12 @@ async function init() {
 
   // Flat-field strength slider (FF)
   function syncFF() {
+    if (!slFF) return;
     state.flatFieldStrength = parseFloat(slFF.value);
-    valFF.textContent = state.flatFieldStrength.toFixed(2);
+    if (valFF) valFF.textContent = state.flatFieldStrength.toFixed(2);
     gl.uniform1f(loc.u_flatFieldStrength, state.flatFieldStrength);
   }
-  slFF.addEventListener('input', syncFF);
+  if (slFF) slFF.addEventListener('input', syncFF);
 
   // Preset dropdown
   slPreset.addEventListener('change', () => {
@@ -351,7 +353,7 @@ async function init() {
   });
 
   // RESET — restore the current preset's R/G/B defaults + EV, leave film base
-  btnReset.addEventListener('click', () => {
+  if (btnReset) btnReset.addEventListener('click', () => {
     let key = slPreset.value;
     if (!PRESETS[key]) key = 'ektar100';
     slEv.value = 1.0;
@@ -394,7 +396,7 @@ async function init() {
     return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-` +
            `${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
   }
-  btnCapture.addEventListener('click', () => {
+  if (btnCapture) btnCapture.addEventListener('click', () => {
     flashShutter();
     canvas.toBlob((blob) => {
       if (!blob) return;
@@ -424,11 +426,11 @@ async function init() {
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, tex);
   }
-  btnCalib.addEventListener('click', () => {
+  if (btnCalib) btnCalib.addEventListener('click', () => {
     if (video.readyState < 2) return;
     captureFlatField();
     // Apply the correction immediately so it's visible; user can dial FF back
-    slFF.value = 1.0;
+    if (slFF) slFF.value = 1.0;
     syncFF();
     flashStatus('CALIBRATED');
   });
