@@ -16,8 +16,15 @@
 
   <div id="ui">
     <div id="top-bar">
-      <span id="status">STARTING</span>
-      <button id="btn-sample">SET BASE</button>
+      <div id="top-left">
+        <span id="status-dot" class="dot-nobase"></span>
+        <span id="status">STARTING</span>
+        <button id="btn-calib">CALIB</button>
+      </div>
+      <div id="top-right">
+        <button id="btn-sample">SET BASE</button>
+        <button id="btn-capture" class="primary">CAPTURE</button>
+      </div>
     </div>
     <div id="bottom-bar">
       <div class="preset-row">
@@ -34,26 +41,36 @@
       </div>
       <div class="slider-row">
         <label>R</label>
-        <input type="range" id="sl-r" min="0.1" max="2.0" step="0.01" value="1.0" />
+        <input type="range" id="sl-r" min="0.3" max="2.0" step="0.01" value="1.0" />
         <span id="val-r">1.00</span>
       </div>
       <div class="slider-row">
         <label>G</label>
-        <input type="range" id="sl-g" min="0.1" max="2.0" step="0.01" value="0.807" />
-        <span id="val-g">0.81</span>
+        <input type="range" id="sl-g" min="0.3" max="2.0" step="0.01" value="0.85" />
+        <span id="val-g">0.85</span>
       </div>
       <div class="slider-row">
         <label>B</label>
-        <input type="range" id="sl-b" min="0.1" max="2.0" step="0.01" value="0.579" />
-        <span id="val-b">0.58</span>
+        <input type="range" id="sl-b" min="0.3" max="2.0" step="0.01" value="0.70" />
+        <span id="val-b">0.70</span>
       </div>
       <div class="slider-row">
         <label>EV</label>
         <input type="range" id="sl-ev" min="0.1" max="4.0" step="0.05" value="1.0" />
         <span id="val-ev">1.00</span>
       </div>
+      <div class="slider-row">
+        <label>FF</label>
+        <input type="range" id="sl-ff" min="0.0" max="1.0" step="0.01" value="0.0" />
+        <span id="val-ff">0.00</span>
+      </div>
+      <button id="btn-reset">RESET</button>
     </div>
   </div>
+
+  <div id="intro-overlay">POINT AT FILM LEADER &rarr; TAP SET BASE</div>
+  <div id="shutter-flash"></div>
+  <div id="crosshair"></div>
 
   <script src="./gl/program.js"></script>
   <script src="./camera.js"></script>

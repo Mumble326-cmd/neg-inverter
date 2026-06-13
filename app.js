@@ -11,10 +11,16 @@ void main() {
   v_texCoord = a_texCoord;
 }`;
 
+// Logarithmic transmission model (Beer–Lambert / Negadoctor approach).
+// u_density now acts as a PER-CHANNEL GAMMA (contrast / colour balance),
+// not a linear multiplier. Flat-field correction is applied before the
+// transmission calc to compensate for lens vignetting / lightbox hotspots.
 const FRAG_SRC = `
 precision mediump float;
 varying vec2 v_texCoord;
 uniform sampler2D u_image;
+uniform sampler2D u_flatField;
+uniform float u_flatFieldStrength;
 uniform vec3 u_filmBase;
 uniform vec3 u_density;
 uniform float u_exposure;
@@ -23,10 +29,17 @@ vec3 toLinear(vec3 c) { return pow(c, vec3(2.2)); }
 vec3 toSRGB(vec3 c)   { return pow(c, vec3(1.0 / 2.2)); }
 
 void main() {
-  vec3 neg = toLinear(texture2D(u_image, v_texCoord).rgb);
-  neg = max(neg, vec3(0.001));
-  vec3 normalised = neg / u_filmBase;
-  vec3 pos = (u_density / normalised) * u_exposure;
+  vec3 neg  = toLinear(texture2D(u_image, v_texCoord).rgb);
+  vec3 flat = toLinear(texture2D(u_flatField, v_texCoord).rgb);
+
+  // Flat-field correction: divide out the illumination profile.
+  // strength 0.0 -> divisor is 1.0 (no-op); strength 1.0 -> full division.
+  vec3 ffDiv = flat * u_flatFieldStrength + (1.0 - u_flatFieldStrength);
+  neg = neg / max(ffDiv, vec3(0.0001));
+
+  vec3 transmission = clamp(neg / u_filmBase, 0.0001, 1.0);
+  vec3 inverted = vec3(1.0) - transmission;
+  vec3 pos = pow(max(inverted, vec3(0.0)), u_density) * u_exposure;
   gl_FragColor = vec4(toSRGB(clamp(pos, 0.0, 1.0)), 1.0);
 }`;
 
@@ -39,43 +52,96 @@ function srgbToLinear(c) {
 }
 
 // ─── State ────────────────────────────────────────────────────────────────────
-// Default density balance: Ektar 100 (Aaron Buchler / abpy, ACEScg linear)
+// Default: Ektar 100 gamma balance for the logarithmic model.
 const state = {
   filmBase: [
     srgbToLinear(0.85),   // warm orange — reasonable starting point
     srgbToLinear(0.55),
     srgbToLinear(0.25),
   ],
-  density:  [1.0, 0.807, 0.579],
+  density:  [1.0, 0.85, 0.70], // per-channel gamma
   exposure: 1.0,
+  flatFieldStrength: 0.0,
 };
 
 // ─── Film stock presets ─────────────────────────────────────────────────────────
-// Each preset is an [R, G, B] density balance. R is held at 1.0 as the reference
-// channel; G and B scale the orange-mask correction warmer/cooler. These are
-// sensible starting points — fine-tune with SET BASE + the sliders per roll.
+// Each preset is an [R, G, B] per-channel GAMMA (not a density ratio).
+// R is held at 1.0 as the reference channel; G and B trim colour balance.
+// Sensible starting points — fine-tune with SET BASE + the sliders per roll.
 const PRESETS = {
-  ektar100:     [1.0, 0.807, 0.579], // current default
-  portra400:    [1.0, 0.780, 0.550],
-  portra800:    [1.0, 0.760, 0.520],
-  gold200:      [1.0, 0.740, 0.500],
-  fuji200:      [1.0, 0.820, 0.620],
-  cinestill800t:[1.0, 0.850, 0.700],
+  ektar100:     [1.0, 0.85, 0.70],
+  portra400:    [1.0, 0.88, 0.74],
+  portra800:    [1.0, 0.90, 0.76],
+  gold200:      [1.0, 0.86, 0.72],
+  fuji200:      [1.0, 0.84, 0.68],
+  cinestill800t:[1.0, 0.82, 0.65],
 };
 
 // ─── DOM refs ─────────────────────────────────────────────────────────────────
-const canvas    = document.getElementById('canvas');
-const statusEl  = document.getElementById('status');
-const btnSample = document.getElementById('btn-sample');
+const canvas      = document.getElementById('canvas');
+const statusEl    = document.getElementById('status');
+const statusDot   = document.getElementById('status-dot');
+const btnSample   = document.getElementById('btn-sample');
+const btnCapture  = document.getElementById('btn-capture');
+const btnCalib    = document.getElementById('btn-calib');
+const btnReset    = document.getElementById('btn-reset');
 const slR  = document.getElementById('sl-r');
 const slG  = document.getElementById('sl-g');
 const slB  = document.getElementById('sl-b');
 const slEv = document.getElementById('sl-ev');
+const slFF = document.getElementById('sl-ff');
 const slPreset = document.getElementById('sl-preset');
 const valR  = document.getElementById('val-r');
 const valG  = document.getElementById('val-g');
 const valB  = document.getElementById('val-b');
 const valEv = document.getElementById('val-ev');
+const valFF = document.getElementById('val-ff');
+const introOverlay = document.getElementById('intro-overlay');
+const shutterFlash = document.getElementById('shutter-flash');
+const crosshair    = document.getElementById('crosshair');
+
+// ─── Status / film-name helpers ─────────────────────────────────────────────────
+let baseSet = false;
+let flashTimer = null;
+
+function currentFilmName() {
+  const opt = slPreset.options[slPreset.selectedIndex];
+  return opt ? opt.text.toUpperCase() : 'CUSTOM';
+}
+function showFilmName() {
+  statusEl.textContent = currentFilmName();
+}
+function flashStatus(msg) {
+  statusEl.textContent = msg;
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(showFilmName, 1500);
+}
+function updateDot() {
+  statusDot.className = baseSet ? 'dot-live' : 'dot-nobase';
+}
+
+// ─── Intro overlay ──────────────────────────────────────────────────────────────
+function dismissIntro() {
+  if (introOverlay) introOverlay.classList.add('hidden');
+  try { sessionStorage.setItem('neg-intro-dismissed', '1'); } catch (_) {}
+}
+
+// ─── Crosshair + shutter feedback ────────────────────────────────────────────────
+let crosshairTimer = null;
+function showCrosshair(clientX, clientY) {
+  if (!crosshair) return;
+  crosshair.style.left = clientX + 'px';
+  crosshair.style.top  = clientY + 'px';
+  crosshair.classList.add('show');
+  clearTimeout(crosshairTimer);
+  crosshairTimer = setTimeout(() => crosshair.classList.remove('show'), 800);
+}
+function flashShutter() {
+  if (!shutterFlash) return;
+  shutterFlash.classList.remove('flash');
+  void shutterFlash.offsetWidth; // force reflow so the animation can re-trigger
+  shutterFlash.classList.add('flash');
+}
 
 // ─── SET BASE helper ──────────────────────────────────────────────────────────
 // Reusable offscreen 2D canvas for reading raw camera pixels.
@@ -89,18 +155,24 @@ function getSampleCtx() {
   return sampleCtx;
 }
 
-function sampleFilmBase(video, gl, loc) {
+// Sample an N×N region and set u_filmBase. centerX/centerY are in video-pixel
+// coords; if omitted, the dead centre of the frame is used (SET BASE button).
+function sampleFilmBase(video, gl, loc, centerX, centerY, N) {
   const ctx = getSampleCtx();
-  sampleCanvas.width  = video.videoWidth;
-  sampleCanvas.height = video.videoHeight;
+  const w = video.videoWidth, h = video.videoHeight;
+  sampleCanvas.width  = w;
+  sampleCanvas.height = h;
   ctx.drawImage(video, 0, 0);
 
-  // Average an 11×11 region at the centre — more stable than a single pixel
-  const N = 11;
-  const cx = Math.floor((sampleCanvas.width  - N) / 2);
-  const cy = Math.floor((sampleCanvas.height - N) / 2);
-  const data = ctx.getImageData(cx, cy, N, N).data;
+  N = N || 11;
+  const half = (N - 1) / 2;
+  let cx = (centerX === undefined) ? Math.floor((w - N) / 2) : Math.round(centerX - half);
+  let cy = (centerY === undefined) ? Math.floor((h - N) / 2) : Math.round(centerY - half);
+  // Keep the read window fully inside the frame
+  cx = Math.min(Math.max(cx, 0), Math.max(w - N, 0));
+  cy = Math.min(Math.max(cy, 0), Math.max(h - N, 0));
 
+  const data = ctx.getImageData(cx, cy, N, N).data;
   let r = 0, g = 0, b = 0;
   for (let i = 0; i < data.length; i += 4) {
     r += data[i]; g += data[i + 1]; b += data[i + 2];
@@ -114,20 +186,33 @@ function sampleFilmBase(video, gl, loc) {
   state.filmBase[2] = Math.max(srgbToLinear(b / n / 255), 0.01);
 
   gl.uniform3fv(loc.u_filmBase, state.filmBase);
+
+  baseSet = true;
+  updateDot();
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 async function init() {
+  // Restore intro-overlay dismissal for this session
+  try {
+    if (sessionStorage.getItem('neg-intro-dismissed') && introOverlay) {
+      introOverlay.classList.add('hidden');
+    }
+  } catch (_) {}
+  updateDot(); // start amber (no base set)
+
   // Hidden video element — doesn't need to be in the DOM
   const video = document.createElement('video');
   video.playsInline = true;
   video.muted = true;
   video.autoplay = true;
 
-  // WebGL setup
+  // WebGL setup. preserveDrawingBuffer:true is required so CAPTURE's toBlob()
+  // can read the rendered frame. high-performance hints the discrete/most-capable GPU.
   const gl = canvas.getContext('webgl', {
     premultipliedAlpha: false,
-    preserveDrawingBuffer: false, // set true if you add a "save frame" button
+    preserveDrawingBuffer: true,
+    powerPreference: 'high-performance',
   });
   if (!gl) { statusEl.textContent = 'NO WEBGL'; return; }
 
@@ -162,7 +247,8 @@ async function init() {
   gl.enableVertexAttribArray(loc.a_texCoord);
   gl.vertexAttribPointer(loc.a_texCoord, 2, gl.FLOAT, false, 0, 0);
 
-  // Camera texture
+  // Camera texture on texture unit 0
+  gl.activeTexture(gl.TEXTURE0);
   const tex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, tex);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -171,13 +257,34 @@ async function init() {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   gl.uniform1i(loc.u_image, 0);
 
+  // Flat-field texture on texture unit 1 — initialised to a 1×1 white pixel
+  // (neutral, so it's a no-op until the user taps CALIB).
+  gl.activeTexture(gl.TEXTURE1);
+  const flatTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, flatTex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
+    new Uint8Array([255, 255, 255, 255]));
+  gl.uniform1i(loc.u_flatField, 1);
+
+  // Back to unit 0 — the render loop uploads camera frames here
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+
   // Set initial uniforms
   gl.uniform3fv(loc.u_filmBase, state.filmBase);
   gl.uniform3fv(loc.u_density,  state.density);
   gl.uniform1f(loc.u_exposure,  state.exposure);
+  gl.uniform1f(loc.u_flatFieldStrength, state.flatFieldStrength);
 
   // Start camera
   await startCamera(video, statusEl);
+  // Once running, the top-left shows the film stock name (camera.js set LIVE)
+  showFilmName();
+  updateDot();
 
   // Size canvas backing store to video dimensions (avoids stretching)
   function sizeCanvas() {
@@ -190,7 +297,8 @@ async function init() {
   video.addEventListener('loadedmetadata', sizeCanvas);
   sizeCanvas();
 
-  // Sliders — read current slider values into state and push uniforms
+  // ─── Sliders ──────────────────────────────────────────────────────────────
+  // Read R/G/B/EV into state and push uniforms
   function syncSliders() {
     state.density[0] = parseFloat(slR.value);
     state.density[1] = parseFloat(slG.value);
@@ -203,29 +311,126 @@ async function init() {
     gl.uniform3fv(loc.u_density,  state.density);
     gl.uniform1f(loc.u_exposure,  state.exposure);
   }
-  // Manually moving any slider drops the preset to Custom
-  [slR, slG, slB, slEv].forEach(s => s.addEventListener('input', () => {
-    syncSliders();
-    slPreset.value = 'custom';
-  }));
 
-  // Preset dropdown — set the R/G/B sliders to the stock's density balance.
-  // 'custom' leaves the sliders untouched. EV is independent of presets.
-  slPreset.addEventListener('change', () => {
-    const p = PRESETS[slPreset.value];
-    if (!p) return; // 'custom' — leave sliders as-is
+  // Apply a named preset to the R/G/B sliders + state
+  function applyPreset(key) {
+    const p = PRESETS[key];
+    if (!p) return;
+    slPreset.value = key;
     slR.value = p[0];
     slG.value = p[1];
     slB.value = p[2];
     syncSliders();
+    showFilmName();
+  }
+
+  // Manually moving an R/G/B slider drops the preset to Custom
+  [slR, slG, slB].forEach(s => s.addEventListener('input', () => {
+    syncSliders();
+    slPreset.value = 'custom';
+    showFilmName();
+  }));
+  // EV is independent of the film stock — adjusting it doesn't change the preset
+  slEv.addEventListener('input', syncSliders);
+
+  // Flat-field strength slider (FF)
+  function syncFF() {
+    state.flatFieldStrength = parseFloat(slFF.value);
+    valFF.textContent = state.flatFieldStrength.toFixed(2);
+    gl.uniform1f(loc.u_flatFieldStrength, state.flatFieldStrength);
+  }
+  slFF.addEventListener('input', syncFF);
+
+  // Preset dropdown
+  slPreset.addEventListener('change', () => {
+    if (PRESETS[slPreset.value]) {
+      applyPreset(slPreset.value);
+    } else {
+      showFilmName(); // 'custom' — leave sliders as-is
+    }
   });
 
-  // SET BASE button
+  // RESET — restore the current preset's R/G/B defaults + EV, leave film base
+  btnReset.addEventListener('click', () => {
+    let key = slPreset.value;
+    if (!PRESETS[key]) key = 'ektar100';
+    slEv.value = 1.0;
+    applyPreset(key);
+  });
+
+  // SET BASE button — sample the dead centre (11×11)
   btnSample.addEventListener('click', () => {
     if (video.readyState < 2) return;
-    sampleFilmBase(video, gl, loc);
-    statusEl.textContent = 'BASE SET';
-    setTimeout(() => statusEl.textContent = 'LIVE', 1500);
+    sampleFilmBase(video, gl, loc);          // centre, N=11
+    dismissIntro();
+    flashStatus('BASE SET');
+  });
+
+  // Tap-to-sample on the canvas — sample a 15×15 region at the tap point
+  canvas.addEventListener('click', (e) => {
+    if (video.readyState < 2 || !canvas.width) return;
+    const rect = canvas.getBoundingClientRect();
+    const tx = e.clientX - rect.left;
+    const ty = e.clientY - rect.top;
+
+    // Map CSS coords → backing-store (video) coords through object-fit: cover
+    const cw = canvas.width, ch = canvas.height;
+    const s = Math.max(rect.width / cw, rect.height / ch);
+    const offX = (rect.width  - cw * s) / 2;
+    const offY = (rect.height - ch * s) / 2;
+    const vx = (tx - offX) / s;
+    const vy = (ty - offY) / s;
+
+    sampleFilmBase(video, gl, loc, vx, vy, 15);
+    showCrosshair(e.clientX, e.clientY);
+    dismissIntro();
+    flashStatus('BASE SET');
+  });
+
+  // CAPTURE — save the current inverted frame as a PNG
+  function timestamp() {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-` +
+           `${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+  }
+  btnCapture.addEventListener('click', () => {
+    flashShutter();
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `neg-${timestamp()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }, 'image/png');
+    flashStatus('CAPTURED');
+  });
+
+  // CALIB — capture the current frame as a flat-field reference (unit 1).
+  // Point at an EMPTY lightbox (no film) first, then tap CALIB.
+  function captureFlatField() {
+    const ctx = getSampleCtx();
+    sampleCanvas.width  = video.videoWidth;
+    sampleCanvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, flatTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, sampleCanvas);
+    // Restore unit 0 for camera uploads in the render loop
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+  }
+  btnCalib.addEventListener('click', () => {
+    if (video.readyState < 2) return;
+    captureFlatField();
+    // Apply the correction immediately so it's visible; user can dial FF back
+    slFF.value = 1.0;
+    syncFF();
+    flashStatus('CALIBRATED');
   });
 
   // Wake lock — prevents screen sleep while using the app
@@ -248,19 +453,16 @@ async function init() {
 
   // Render loop — use requestVideoFrameCallback if available (only uploads
   // a new texture when there is actually a new camera frame to show).
-  // Uniforms are NOT re-sent here — they only change on slider / SET BASE
-  // events, which push them directly. Per frame we only move the pixels.
+  // Uniforms are NOT re-sent here — they only change on UI events.
+  // Per frame we only move the pixels via texSubImage2D (no realloc).
   let texAllocated = false;
   function drawScene() {
-    // Guard: only upload if the video has decoded at least one frame
     if (video.readyState >= 2 && video.videoWidth > 0) {
       gl.bindTexture(gl.TEXTURE_2D, tex);
       if (!texAllocated) {
-        // First frame: allocate storage + upload
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
         texAllocated = true;
       } else {
-        // Subsequent frames: update in place — no per-frame reallocation
         gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, video);
       }
       gl.drawArrays(gl.TRIANGLES, 0, 6);
@@ -274,7 +476,7 @@ async function init() {
     }
     video.requestVideoFrameCallback(rvfcLoop);
   } else {
-    // Fallback: requestAnimationFrame (uploads every display frame regardless)
+    // Fallback only: requestAnimationFrame
     function rafLoop() {
       drawScene();
       requestAnimationFrame(rafLoop);

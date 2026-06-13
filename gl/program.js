@@ -32,6 +32,8 @@ function getLocations(gl, program) {
     a_position: gl.getAttribLocation(program,  'a_position'),
     a_texCoord: gl.getAttribLocation(program,  'a_texCoord'),
     u_image:    gl.getUniformLocation(program, 'u_image'),
+    u_flatField:        gl.getUniformLocation(program, 'u_flatField'),
+    u_flatFieldStrength:gl.getUniformLocation(program, 'u_flatFieldStrength'),
     u_filmBase: gl.getUniformLocation(program, 'u_filmBase'),
     u_density:  gl.getUniformLocation(program, 'u_density'),
     u_exposure: gl.getUniformLocation(program, 'u_exposure'),
