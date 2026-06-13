@@ -50,6 +50,19 @@ const state = {
   exposure: 1.0,
 };
 
+// ─── Film stock presets ─────────────────────────────────────────────────────────
+// Each preset is an [R, G, B] density balance. R is held at 1.0 as the reference
+// channel; G and B scale the orange-mask correction warmer/cooler. These are
+// sensible starting points — fine-tune with SET BASE + the sliders per roll.
+const PRESETS = {
+  ektar100:     [1.0, 0.807, 0.579], // current default
+  portra400:    [1.0, 0.780, 0.550],
+  portra800:    [1.0, 0.760, 0.520],
+  gold200:      [1.0, 0.740, 0.500],
+  fuji200:      [1.0, 0.820, 0.620],
+  cinestill800t:[1.0, 0.850, 0.700],
+};
+
 // ─── DOM refs ─────────────────────────────────────────────────────────────────
 const canvas    = document.getElementById('canvas');
 const statusEl  = document.getElementById('status');
@@ -58,6 +71,7 @@ const slR  = document.getElementById('sl-r');
 const slG  = document.getElementById('sl-g');
 const slB  = document.getElementById('sl-b');
 const slEv = document.getElementById('sl-ev');
+const slPreset = document.getElementById('sl-preset');
 const valR  = document.getElementById('val-r');
 const valG  = document.getElementById('val-g');
 const valB  = document.getElementById('val-b');
@@ -176,7 +190,7 @@ async function init() {
   video.addEventListener('loadedmetadata', sizeCanvas);
   sizeCanvas();
 
-  // Sliders
+  // Sliders — read current slider values into state and push uniforms
   function syncSliders() {
     state.density[0] = parseFloat(slR.value);
     state.density[1] = parseFloat(slG.value);
@@ -189,7 +203,22 @@ async function init() {
     gl.uniform3fv(loc.u_density,  state.density);
     gl.uniform1f(loc.u_exposure,  state.exposure);
   }
-  [slR, slG, slB, slEv].forEach(s => s.addEventListener('input', syncSliders));
+  // Manually moving any slider drops the preset to Custom
+  [slR, slG, slB, slEv].forEach(s => s.addEventListener('input', () => {
+    syncSliders();
+    slPreset.value = 'custom';
+  }));
+
+  // Preset dropdown — set the R/G/B sliders to the stock's density balance.
+  // 'custom' leaves the sliders untouched. EV is independent of presets.
+  slPreset.addEventListener('change', () => {
+    const p = PRESETS[slPreset.value];
+    if (!p) return; // 'custom' — leave sliders as-is
+    slR.value = p[0];
+    slG.value = p[1];
+    slB.value = p[2];
+    syncSliders();
+  });
 
   // SET BASE button
   btnSample.addEventListener('click', () => {
@@ -218,15 +247,22 @@ async function init() {
   });
 
   // Render loop — use requestVideoFrameCallback if available (only uploads
-  // a new texture when there is actually a new camera frame to show)
+  // a new texture when there is actually a new camera frame to show).
+  // Uniforms are NOT re-sent here — they only change on slider / SET BASE
+  // events, which push them directly. Per frame we only move the pixels.
+  let texAllocated = false;
   function drawScene() {
     // Guard: only upload if the video has decoded at least one frame
     if (video.readyState >= 2 && video.videoWidth > 0) {
       gl.bindTexture(gl.TEXTURE_2D, tex);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
-      gl.uniform3fv(loc.u_filmBase, state.filmBase);
-      gl.uniform3fv(loc.u_density,  state.density);
-      gl.uniform1f(loc.u_exposure,  state.exposure);
+      if (!texAllocated) {
+        // First frame: allocate storage + upload
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+        texAllocated = true;
+      } else {
+        // Subsequent frames: update in place — no per-frame reallocation
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, video);
+      }
       gl.drawArrays(gl.TRIANGLES, 0, 6);
     }
   }

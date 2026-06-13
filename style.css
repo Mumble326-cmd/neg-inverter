@@ -64,6 +64,33 @@ html, body {
   gap: 8px;
 }
 
+.preset-row { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+
+.preset-row label {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  opacity: 0.5;
+  width: 36px;
+  flex-shrink: 0;
+}
+
+.preset-row select {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid rgba(255,255,255,0.3);
+  color: #e0e0e0;
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  padding: 6px 10px;
+  outline: none;
+  cursor: pointer;
+}
+
+.preset-row select option { background: #0a0a0a; color: #e0e0e0; }
+
 .slider-row { display: flex; align-items: center; gap: 12px; }
 
 .slider-row label {

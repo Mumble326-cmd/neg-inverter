@@ -1,6 +1,6 @@
 // sw.js — service worker
 // Bump CACHE version on every deploy so users get fresh files
-const CACHE = 'neg-v1';
+const CACHE = 'neg-v2';
 const ASSETS = [
   './',
   './index.html',
