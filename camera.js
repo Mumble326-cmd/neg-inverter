@@ -8,9 +8,10 @@ async function startCamera(videoEl, statusEl) {
   // environment camera can't be matched — avoids a hard CAMERA ERROR / black screen.
   const baseVideo = {
     facingMode: { ideal: 'environment' },
-    width:  { ideal: 1280 },
-    height: { ideal: 720 },
+    width:  { ideal: 1920 },
+    height: { ideal: 1080 },
     frameRate: { ideal: 30 },
+    resizeMode: 'none', // don't let the browser downscale/crop the sensor stream
   };
 
   let stream;

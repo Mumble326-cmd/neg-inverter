@@ -91,6 +91,9 @@ const slG  = document.getElementById('sl-g');
 const slB  = document.getElementById('sl-b');
 const slEv = document.getElementById('sl-ev');
 const slFF = document.getElementById('sl-ff');
+const slZoom = document.getElementById('sl-zoom');
+const valZoom = document.getElementById('val-zoom');
+const zoomRow = document.getElementById('zoom-row');
 const slPreset = document.getElementById('sl-preset');
 const valR  = document.getElementById('val-r');
 const valG  = document.getElementById('val-g');
@@ -283,10 +286,29 @@ async function init() {
   gl.uniform1f(loc.u_flatFieldStrength, state.flatFieldStrength);
 
   // Start camera
-  await startCamera(video, statusEl);
+  const stream = await startCamera(video, statusEl);
   // Once running, the top-left shows the film stock name (camera.js set LIVE)
   showFilmName();
   updateDot();
+
+  // Optical/digital zoom — lets the user fill the frame with the negative while
+  // staying far enough back for the lens to focus. Only shown if supported.
+  const track = stream && stream.getVideoTracks ? stream.getVideoTracks()[0] : null;
+  const caps = (track && track.getCapabilities) ? track.getCapabilities() : {};
+  if (caps.zoom && track && zoomRow && slZoom) {
+    const settings = track.getSettings ? track.getSettings() : {};
+    slZoom.min  = caps.zoom.min;
+    slZoom.max  = caps.zoom.max;
+    slZoom.step = caps.zoom.step || 0.1;
+    slZoom.value = settings.zoom || caps.zoom.min;
+    if (valZoom) valZoom.textContent = parseFloat(slZoom.value).toFixed(1);
+    zoomRow.style.display = '';
+    slZoom.addEventListener('input', async () => {
+      const z = parseFloat(slZoom.value);
+      if (valZoom) valZoom.textContent = z.toFixed(1);
+      try { await track.applyConstraints({ advanced: [{ zoom: z }] }); } catch (_) {}
+    });
+  }
 
   // Size canvas backing store to video dimensions (avoids stretching)
   function sizeCanvas() {
