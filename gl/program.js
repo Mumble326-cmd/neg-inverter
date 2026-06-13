@@ -37,5 +37,6 @@ function getLocations(gl, program) {
     u_filmBase: gl.getUniformLocation(program, 'u_filmBase'),
     u_density:  gl.getUniformLocation(program, 'u_density'),
     u_exposure: gl.getUniformLocation(program, 'u_exposure'),
+    u_zoom:     gl.getUniformLocation(program, 'u_zoom'),
   };
 }

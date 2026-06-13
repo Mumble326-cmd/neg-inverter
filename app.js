@@ -24,13 +24,16 @@ uniform float u_flatFieldStrength;
 uniform vec3 u_filmBase;
 uniform vec3 u_density;
 uniform float u_exposure;
+uniform float u_zoom;
 
 vec3 toLinear(vec3 c) { return pow(c, vec3(2.2)); }
 vec3 toSRGB(vec3 c)   { return pow(c, vec3(1.0 / 2.2)); }
 
 void main() {
-  vec3 neg     = toLinear(texture2D(u_image, v_texCoord).rgb);
-  vec3 ffField = toLinear(texture2D(u_flatField, v_texCoord).rgb);
+  // Digital crop-zoom around the frame centre (u_zoom >= 1.0; 1.0 = no zoom)
+  vec2 uv = (v_texCoord - 0.5) / u_zoom + 0.5;
+  vec3 neg     = toLinear(texture2D(u_image, uv).rgb);
+  vec3 ffField = toLinear(texture2D(u_flatField, uv).rgb);
 
   // Flat-field correction: divide out the illumination profile.
   // strength 0.0 -> divisor is 1.0 (no-op); strength 1.0 -> full division.
@@ -284,6 +287,7 @@ async function init() {
   gl.uniform3fv(loc.u_density,  state.density);
   gl.uniform1f(loc.u_exposure,  state.exposure);
   gl.uniform1f(loc.u_flatFieldStrength, state.flatFieldStrength);
+  gl.uniform1f(loc.u_zoom, 1.0);
 
   // Start camera
   const stream = await startCamera(video, statusEl);
@@ -291,23 +295,37 @@ async function init() {
   showFilmName();
   updateDot();
 
-  // Optical/digital zoom — lets the user fill the frame with the negative while
-  // staying far enough back for the lens to focus. Only shown if supported.
+  // Zoom — lets the user fill the frame with the negative while staying far
+  // enough back for the lens to focus. Prefer the camera's native zoom (best
+  // quality); if the browser doesn't expose it, fall back to a shader crop-zoom
+  // that works on every device. The slider is always shown.
   const track = stream && stream.getVideoTracks ? stream.getVideoTracks()[0] : null;
   const caps = (track && track.getCapabilities) ? track.getCapabilities() : {};
-  if (caps.zoom && track && zoomRow && slZoom) {
-    const settings = track.getSettings ? track.getSettings() : {};
-    slZoom.min  = caps.zoom.min;
-    slZoom.max  = caps.zoom.max;
-    slZoom.step = caps.zoom.step || 0.1;
-    slZoom.value = settings.zoom || caps.zoom.min;
-    if (valZoom) valZoom.textContent = parseFloat(slZoom.value).toFixed(1);
+  if (zoomRow && slZoom) {
+    if (caps.zoom && track) {
+      // Native zoom (optical/sensor) — set the slider to the device's range
+      const settings = track.getSettings ? track.getSettings() : {};
+      slZoom.min  = caps.zoom.min;
+      slZoom.max  = caps.zoom.max;
+      slZoom.step = caps.zoom.step || 0.1;
+      slZoom.value = settings.zoom || caps.zoom.min;
+      if (valZoom) valZoom.textContent = parseFloat(slZoom.value).toFixed(1);
+      slZoom.addEventListener('input', async () => {
+        const z = parseFloat(slZoom.value);
+        if (valZoom) valZoom.textContent = z.toFixed(1);
+        try { await track.applyConstraints({ advanced: [{ zoom: z }] }); } catch (_) {}
+      });
+    } else {
+      // Fallback: digital crop-zoom in the shader (1.0–5.0)
+      slZoom.min = 1; slZoom.max = 5; slZoom.step = 0.1; slZoom.value = 1;
+      if (valZoom) valZoom.textContent = '1.0';
+      slZoom.addEventListener('input', () => {
+        const z = parseFloat(slZoom.value);
+        if (valZoom) valZoom.textContent = z.toFixed(1);
+        gl.uniform1f(loc.u_zoom, z);
+      });
+    }
     zoomRow.style.display = '';
-    slZoom.addEventListener('input', async () => {
-      const z = parseFloat(slZoom.value);
-      if (valZoom) valZoom.textContent = z.toFixed(1);
-      try { await track.applyConstraints({ advanced: [{ zoom: z }] }); } catch (_) {}
-    });
   }
 
   // Size canvas backing store to video dimensions (avoids stretching)
