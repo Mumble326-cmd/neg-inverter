@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0a0a0a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>NEG</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="./icon-192.png" />
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+
+  <div id="ui">
+    <div id="top-bar">
+      <span id="status">STARTING</span>
+      <button id="btn-sample">SET BASE</button>
+    </div>
+    <div id="bottom-bar">
+      <div class="slider-row">
+        <label>R</label>
+        <input type="range" id="sl-r" min="0.1" max="2.0" step="0.01" value="1.0" />
+        <span id="val-r">1.00</span>
+      </div>
+      <div class="slider-row">
+        <label>G</label>
+        <input type="range" id="sl-g" min="0.1" max="2.0" step="0.01" value="0.807" />
+        <span id="val-g">0.81</span>
+      </div>
+      <div class="slider-row">
+        <label>B</label>
+        <input type="range" id="sl-b" min="0.1" max="2.0" step="0.01" value="0.579" />
+        <span id="val-b">0.58</span>
+      </div>
+      <div class="slider-row">
+        <label>EV</label>
+        <input type="range" id="sl-ev" min="0.1" max="4.0" step="0.05" value="1.0" />
+        <span id="val-ev">1.00</span>
+      </div>
+    </div>
+  </div>
+
+  <script src="./gl/program.js"></script>
+  <script src="./camera.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
