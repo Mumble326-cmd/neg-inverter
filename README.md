@@ -32,11 +32,16 @@ Access at: `https://YOURUSERNAME.github.io/neg-inverter/`
 3. Tap SET BASE
 4. Dial R/G/B sliders for colour balance, EV for brightness
 
-## Default density values (Ektar 100)
+## Film stock presets
 
-R = 1.0, G = 0.807, B = 0.579
-Source: Aaron Buchler, abpy/color-neg-resources (ACEScg linear)
-For other stocks, use SET BASE + sliders to calibrate.
+Per-stock presets (orange-mask base + per-channel gamma) are **derived from the
+spektrafilm project's** spectral and characteristic-curve data. See
+`ATTRIBUTION.md`. SET BASE + the sliders still let you calibrate per roll.
+
+## Licence
+
+NEG is licensed under **GPL-3.0-or-later** because it embeds data derived from
+spektrafilm (GPL-3.0). See `LICENSE` and `ATTRIBUTION.md`.
 
 ## On every deploy
 

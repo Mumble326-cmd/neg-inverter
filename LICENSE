@@ -1,0 +1,31 @@
+NEG — Live Film Negative Inverter
+Copyright (C) 2026 Abdullah Firdousi
+
+SPDX-License-Identifier: GPL-3.0-or-later
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+-------------------------------------------------------------------------------
+WHY GPL-3.0: NEG embeds film-stock preset data DERIVED FROM the spektrafilm
+project (© 2026 Andrea Volpato, GPL-3.0). See ATTRIBUTION.md. That copyleft
+obligation propagates to NEG.
+
+>>> ACTION REQUIRED FOR FULL COMPLIANCE <<<
+The complete, verbatim text of the GNU General Public License version 3 MUST
+accompany this distribution and replace this marker block. Obtain the
+authoritative text from https://www.gnu.org/licenses/gpl-3.0.txt (or use
+GitHub's "Add file -> Create new file -> LICENSE -> choose GPLv3 template",
+which inserts the FSF-verified full text). This header is the standard FSF
+application notice, not a substitute for the full licence body.
+-------------------------------------------------------------------------------

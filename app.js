@@ -55,30 +55,34 @@ function srgbToLinear(c) {
   return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
 }
 
-// ─── State ────────────────────────────────────────────────────────────────────
-// Default: Ektar 100 gamma balance for the logarithmic model.
-const state = {
-  filmBase: [
-    srgbToLinear(0.85),   // warm orange — reasonable starting point
-    srgbToLinear(0.55),
-    srgbToLinear(0.25),
-  ],
-  density:  [1.0, 0.85, 0.70], // per-channel gamma
-  exposure: 1.0,
-  flatFieldStrength: 0.0,
+// ─── Film stock presets ─────────────────────────────────────────────────────────
+// Each preset carries:
+//   density  — per-channel GAMMA [R,G,B] (R pinned to 1.0)
+//   filmBase — the stock's orange-mask colour in LINEAR RGB (seeds u_filmBase;
+//              SET BASE still overrides this per-scan and is the gold standard)
+//
+// These values are DERIVED FROM the spektrafilm project's per-film spectral
+// + characteristic-curve data (base_density → mask RGB; density_curves slopes →
+// per-channel gamma). spektrafilm © 2026 Andrea Volpato, licensed GPL-3.0.
+// Because NEG embeds data derived from spektrafilm, NEG is distributed under
+// GPL-3.0-or-later. See LICENSE and ATTRIBUTION.md. https://github.com/andreavolpato/spektrafilm
+// CineStill 800T uses the Vision3 500T profile as its documented proxy.
+const PRESETS = {
+  ektar100:     { density: [1.0, 0.859, 0.980], filmBase: [0.635, 0.251, 0.157] },
+  portra400:    { density: [1.0, 0.908, 1.063], filmBase: [0.625, 0.261, 0.163] },
+  portra800:    { density: [1.0, 0.926, 1.025], filmBase: [0.595, 0.275, 0.131] },
+  gold200:      { density: [1.0, 0.898, 1.012], filmBase: [0.547, 0.251, 0.133] },
+  fuji200:      { density: [1.0, 1.105, 1.348], filmBase: [0.549, 0.263, 0.144] },
+  cinestill800t:{ density: [1.0, 0.890, 1.112], filmBase: [0.653, 0.275, 0.155] },
 };
 
-// ─── Film stock presets ─────────────────────────────────────────────────────────
-// Each preset is an [R, G, B] per-channel GAMMA (not a density ratio).
-// R is held at 1.0 as the reference channel; G and B trim colour balance.
-// Sensible starting points — fine-tune with SET BASE + the sliders per roll.
-const PRESETS = {
-  ektar100:     [1.0, 0.85, 0.70],
-  portra400:    [1.0, 0.88, 0.74],
-  portra800:    [1.0, 0.90, 0.76],
-  gold200:      [1.0, 0.86, 0.72],
-  fuji200:      [1.0, 0.84, 0.68],
-  cinestill800t:[1.0, 0.82, 0.65],
+// ─── State ────────────────────────────────────────────────────────────────────
+// Default: Ektar 100, seeded from the derived preset above.
+const state = {
+  filmBase: PRESETS.ektar100.filmBase.slice(),
+  density:  PRESETS.ektar100.density.slice(), // per-channel gamma
+  exposure: 1.0,
+  flatFieldStrength: 0.0,
 };
 
 // ─── DOM refs ─────────────────────────────────────────────────────────────────
@@ -354,15 +358,18 @@ async function init() {
     gl.uniform1f(loc.u_exposure,  state.exposure);
   }
 
-  // Apply a named preset to the R/G/B sliders + state
+  // Apply a named preset: gamma -> R/G/B sliders, and seed the orange-mask base.
   function applyPreset(key) {
     const p = PRESETS[key];
     if (!p) return;
     slPreset.value = key;
-    slR.value = p[0];
-    slG.value = p[1];
-    slB.value = p[2];
+    slR.value = p.density[0];
+    slG.value = p.density[1];
+    slB.value = p.density[2];
     syncSliders();
+    // Seed the stock's orange-mask base. SET BASE still overrides per-scan.
+    state.filmBase = p.filmBase.slice();
+    gl.uniform3fv(loc.u_filmBase, state.filmBase);
     showFilmName();
   }
 
