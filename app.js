@@ -29,12 +29,13 @@ vec3 toLinear(vec3 c) { return pow(c, vec3(2.2)); }
 vec3 toSRGB(vec3 c)   { return pow(c, vec3(1.0 / 2.2)); }
 
 void main() {
-  vec3 neg  = toLinear(texture2D(u_image, v_texCoord).rgb);
-  vec3 flat = toLinear(texture2D(u_flatField, v_texCoord).rgb);
+  vec3 neg     = toLinear(texture2D(u_image, v_texCoord).rgb);
+  vec3 ffField = toLinear(texture2D(u_flatField, v_texCoord).rgb);
 
   // Flat-field correction: divide out the illumination profile.
   // strength 0.0 -> divisor is 1.0 (no-op); strength 1.0 -> full division.
-  vec3 ffDiv = flat * u_flatFieldStrength + (1.0 - u_flatFieldStrength);
+  // NOTE: 'flat' is a reserved GLSL keyword, so this var is named ffField.
+  vec3 ffDiv = ffField * u_flatFieldStrength + (1.0 - u_flatFieldStrength);
   neg = neg / max(ffDiv, vec3(0.0001));
 
   vec3 transmission = clamp(neg / u_filmBase, 0.0001, 1.0);
